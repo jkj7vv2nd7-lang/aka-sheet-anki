@@ -98,7 +98,7 @@ footer button{background:none; border:1px solid var(--line); border-radius:9px; 
 
 <script>
 "use strict";
-const APP_VER = "1.1.0";
+const APP_VER = "1.2.0";
 const LSKEY = "aka-sheet-anki-v1";
 document.getElementById("verLabel").textContent = "ver " + APP_VER;
 
@@ -164,11 +164,11 @@ cards: [
 ];
 
 /* ============ 状態 ============ */
-let S = { decks: [], progress: {}, activity: {}, settings: { autoSpeak: false } };
+let S = { decks: [], progress: {}, activity: {}, settings: { autoSpeak: false, studyInput: false } };
 function load(){
 try{
 const raw = localStorage.getItem(LSKEY);
-if(raw){ const d = JSON.parse(raw); if(d && typeof d === "object"){ S.decks = d.decks || []; S.progress = d.progress || {}; S.activity = d.activity || {}; S.settings = Object.assign({ autoSpeak: false }, d.settings || {}); }}
+if(raw){ const d = JSON.parse(raw); if(d && typeof d === "object"){ S.decks = d.decks || []; S.progress = d.progress || {}; S.activity = d.activity || {}; S.settings = Object.assign({ autoSpeak: false, studyInput: false }, d.settings || {}); }}
 }catch(e){}
 }
 function save(){
@@ -287,6 +287,25 @@ ${due > 0
 </label>
 </div>
 <div class="card">
+<h2>🤖 AI設定（任意）</h2>
+<p class="small">写真の読み取りに使うAIです。初期設定はOFFで、キーはこの端末の中にだけ保存されます。</p>
+<label style="display:flex; align-items:center; gap:10px; font-size:15.5px; color:var(--ink); font-weight:400; margin:0;">
+<input type="checkbox" id="aiEnabled" ${aiSet.enabled ? "checked" : ""} onchange="aiSetEnabled(this.checked)" style="width:22px; height:22px; flex:none;">
+<span>AI読み取りを使う</span>
+</label>
+<label>接続先</label>
+<select id="aiProvider" onchange="aiSetProvider(this.value)">
+${Object.keys(AI_DEFAULTS).map(p => `<option value="${p}" ${aiSet.provider === p ? "selected" : ""}>${AI_LABELS[p]}</option>`).join("")}
+</select>
+${aiSet.provider !== "ollama" ? `<label>APIキー</label>
+<input type="password" id="aiKey" value="${esc(aiCfg().key)}" onchange="aiFormChanged()" placeholder="キーを貼ってください" autocomplete="off">` : ""}
+<label>モデル名</label>
+<input type="text" id="aiModel" value="${esc(aiCfg().model)}" onchange="aiFormChanged()">
+${(aiSet.provider === "compat" || aiSet.provider === "ollama") ? `<label>ベースURL</label>
+<input type="text" id="aiBase" value="${esc(aiCfg().base)}" onchange="aiFormChanged()">` : ""}
+<p class="small">${AI_NOTES[aiSet.provider]}</p>
+</div>
+<div class="card">
 <h2>📚 デッキ</h2>
 ${allDecks().map(d => {
 const dc = dueCardsOf(d).length;
@@ -382,6 +401,29 @@ ${d.sample? "": `
 <input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv,text/plain" onchange="importCsvFile(this,'${d.id}')">
 <div id="csvMsg"></div>`}
 </div>
+${d.sample ? "" : `
+<div class="card">
+<h2>📷 写真・画像PDFから取り込む（AI）</h2>
+${aiReady() ? `<p class="small">接続先：${AI_LABELS[aiSet.provider]}（${esc(aiCfg().model)}）。教科書やノートの写真を選ぶと、AIが読み取って下書きを作ります。下書きは、確認・修正して「この内容で追加する」を押すまで保存されません。</p>` : `<p class="small">ホームの「AI設定」で接続先とキーを設定すると使えます（初期設定はOFF）。</p>`}
+<label>下書きの種類</label>
+<select id="aiMode" onchange="aiSetMode(this.value)">
+<option value="sheet" ${aiDraftMode === "sheet" ? "selected" : ""}>シート文（文章の暗記・隠す語句の候補つき）</option>
+<option value="cards" ${aiDraftMode === "cards" ? "selected" : ""}>カード（用語と答えのペア）</option>
+</select>
+<label>写真を選ぶ</label>
+<input type="file" id="aiPhoto" accept="image/*" onchange="importAiPhoto(this)">
+<label>画像だけのPDFを選ぶ</label>
+<input type="file" id="aiPdf" accept=".pdf,application/pdf" onchange="importAiPdf(this)">
+<p class="small">文字データのあるPDFは、上の「PDFから文章を取り込む」（キー不要）がおすすめです。</p>
+<div id="aiMsg"></div>
+<div id="aiDraftArea" class="hidden">
+<label>下書き（必ず確認・修正してください）</label>
+<textarea id="aiDraft" style="min-height:140px;"></textarea>
+<label>シートのタイトル（シート文のとき）</label>
+<input type="text" id="aiDraftTitle" placeholder="例：写真から取り込んだシート">
+<button class="btn" onclick="saveAiDraft('${d.id}')">この内容で追加する</button>
+</div>
+</div>`}
 <div class="card">
 <h2>💾 バックアップ</h2>
 <button class="btn ghost" onclick="exportDeck('${d.id}')">このデッキをJSONで書き出す</button>
@@ -563,6 +605,204 @@ async function importPdf(input){
   input.value = "";
 }
 
+/* ============ AI連携（任意・初期OFF／写真発掘と同じ接続先の並び） ============ */
+const AKA_AI_KEY = "aka-sheet-anki-ai-v1";
+const AI_DEFAULTS = {
+  gemini: { model: "gemini-3.6-flash", base: "" },
+  openai: { model: "gpt-4o-mini", base: "" },
+  claude: { model: "claude-sonnet-4-5", base: "" },
+  compat: { model: "", base: "" },
+  ollama: { model: "qwen3-vl:8b", base: "http://localhost:11434" }
+};
+const AI_LABELS = { gemini: "Google Gemini", openai: "OpenAI", claude: "Anthropic Claude", compat: "OpenAI互換", ollama: "Ollama（ローカル）" };
+const AI_NOTES = {
+  gemini: "Google AI Studioで取得したキーを貼ってください。無料枠でも使えます。",
+  openai: "OpenAIのAPIキーを貼ってください。画像を見られるモデルを選んでください。",
+  claude: "AnthropicのAPIキーを貼ってください。画像を見られるモデルを選んでください。",
+  compat: "OpenAI互換サービスのベースURLとキー、モデル名を入れてください。",
+  ollama: "自分のパソコンでOllamaが動いているとき向けです（キー不要）。PCのブラウザではそのまま使えます。iPhoneから使う場合は、PCが起動していることと、Ollama側のネットワーク許可設定（OLLAMA_HOSTとOLLAMA_ORIGINS）が必要です。ベースURLにはPCのアドレス（例：http://192.168.1.10:11434）を入れ、画像対応モデル（Qwen-VLやLLaVA系）を選んでください。"
+};
+function aiLoad(){
+  let s = null;
+  try{ s = JSON.parse(localStorage.getItem(AKA_AI_KEY) || "null"); }catch(e){}
+  if(!s || typeof s !== "object") s = {};
+  if(!s.providers) s.providers = {};
+  for(const p of Object.keys(AI_DEFAULTS)){
+    if(!s.providers[p]) s.providers[p] = { key: "", model: AI_DEFAULTS[p].model, base: AI_DEFAULTS[p].base };
+    if(s.providers[p].model === undefined) s.providers[p].model = AI_DEFAULTS[p].model;
+    if(s.providers[p].base === undefined) s.providers[p].base = AI_DEFAULTS[p].base;
+    if(s.providers[p].key === undefined) s.providers[p].key = "";
+  }
+  if(s.enabled === undefined) s.enabled = false;
+  if(!AI_DEFAULTS[s.provider]) s.provider = "gemini";
+  return s;
+}
+let aiSet = aiLoad();
+function aiSave(){ localStorage.setItem(AKA_AI_KEY, JSON.stringify(aiSet)); }
+const aiCfg = () => aiSet.providers[aiSet.provider];
+const aiReady = () => aiSet.enabled && (aiSet.provider === "ollama" || (aiCfg().key || "").trim().length > 0) && (aiCfg().model || "").trim().length > 0;
+function aiSetEnabled(v){ aiSet.enabled = !!v; aiSave(); render(); }
+function aiSetProvider(v){ aiReadForm(); aiSet.provider = v; aiSave(); render(); }
+function aiReadForm(){
+  const k = document.getElementById("aiKey"); if(k) aiCfg().key = k.value;
+  const m = document.getElementById("aiModel"); if(m) aiCfg().model = m.value;
+  const b = document.getElementById("aiBase"); if(b) aiCfg().base = b.value;
+}
+function aiFormChanged(){ aiReadForm(); aiSave(); }
+function blobToB64(blob){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(",")[1] || "");
+    fr.onerror = rej;
+    fr.readAsDataURL(blob);
+  });
+}
+async function fetchJson(url, opts, timeoutMs){
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), timeoutMs || 90000);
+  try{
+    const r = await fetch(url, Object.assign({}, opts, { signal: ctl.signal }));
+    const text = await r.text();
+    let json = null;
+    try{ json = JSON.parse(text); }catch(e){}
+    if(!r.ok) throw new Error("HTTP " + r.status + (json && json.error && json.error.message ? "：" + json.error.message : ""));
+    return json;
+  } finally { clearTimeout(to); }
+}
+const AI_SHEET_PROMPT = "この写真は教科書やノートのページです。書かれている文章を正確に書き起こしてください。暗記すべき重要な語句は【】で囲んでください。説明や前置きは書かず、書き起こした文章だけを返してください。読み取れない部分は無理に補わず、飛ばしてください。";
+const AI_CARD_PROMPT = "この写真は教科書やノートのページです。暗記カードにできる「用語とその説明（答え）」のペアを抜き出してください。1行に1組、「用語,答え」の形式で返してください。説明や前置きは書かないでください。";
+async function aiReadImage(blob, prompt){
+  const p = aiSet.provider, cfg = aiCfg();
+  const model = (cfg.model || "").trim();
+  const b64 = await blobToB64(blob);
+  if(p === "gemini"){
+    const j = await fetchJson("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(cfg.key.trim()), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: b64 } }] }], generationConfig: { temperature: 0.2 } })
+    });
+    const t = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts.map(x => x.text || "").join("");
+    if(!t) throw new Error("AIの返答が空でした");
+    return t;
+  }
+  if(p === "claude"){
+    const j = await fetchJson("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": cfg.key.trim(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      body: JSON.stringify({ model, max_tokens: 3000, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } }, { type: "text", text: prompt }] }] })
+    });
+    const t = (j.content || []).map(x => x.text || "").join("");
+    if(!t) throw new Error("AIの返答が空でした");
+    return t;
+  }
+  if(p === "ollama"){
+    const base = (cfg.base || "http://localhost:11434").replace(/\/+$/, "");
+    const j = await fetchJson(base + "/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, stream: false, messages: [{ role: "user", content: prompt, images: [b64] }] })
+    }, 180000);
+    const t = j.message && j.message.content;
+    if(!t) throw new Error("AIの返答が空でした");
+    return t;
+  }
+  const base = p === "compat" ? (cfg.base || "").replace(/\/+$/, "") : "https://api.openai.com/v1";
+  if(!base) throw new Error("ベースURLが未設定です");
+  const j = await fetchJson(base + "/chat/completions", {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key.trim() },
+    body: JSON.stringify({ model, temperature: 0.2, messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64 } }] }] })
+  });
+  const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+  if(!t) throw new Error("AIの返答が空でした");
+  return t;
+}
+
+/* ============ 写真・画像PDFのAI取り込み（下書き確認制） ============ */
+let aiDraftMode = "sheet";
+function aiSetMode(v){ aiDraftMode = v; }
+function aiMsg(html){
+  const el = document.getElementById("aiMsg");
+  if(el) el.innerHTML = html ? `<div class="msg">${html}</div>` : "";
+}
+function showAiDraft(text){
+  const area = document.getElementById("aiDraftArea");
+  if(area) area.classList.remove("hidden");
+  const ta = document.getElementById("aiDraft");
+  if(ta) ta.value = text;
+}
+async function fileToJpegBlob(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale)), h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    cv.getContext("2d").drawImage(img, 0, 0, w, h);
+    return await new Promise(res => cv.toBlob(res, "image/jpeg", 0.85));
+  } finally { URL.revokeObjectURL(url); }
+}
+async function importAiPhoto(input){
+  const f = input.files && input.files[0]; input.value = ""; if(!f) return;
+  if(!aiReady()){ aiMsg("AI設定が未完了です。ホームの「AI設定」で接続先とキーを設定してください。"); return; }
+  aiMsg("写真を読み取っています…");
+  try{
+    const blob = await fileToJpegBlob(f);
+    const text = await aiReadImage(blob, aiDraftMode === "sheet" ? AI_SHEET_PROMPT : AI_CARD_PROMPT);
+    showAiDraft(text.trim());
+    aiMsg("下書きができました。内容を確認・修正してから「この内容で追加する」を押してください。このままでは保存されません。");
+  }catch(e){ aiMsg("読み取れませんでした：" + (e.message || e)); }
+}
+async function importAiPdf(input){
+  const f = input.files && input.files[0]; input.value = ""; if(!f) return;
+  if(!aiReady()){ aiMsg("AI設定が未完了です。ホームの「AI設定」で接続先とキーを設定してください。"); return; }
+  aiMsg("PDFを確認しています…");
+  try{
+    const lib = await loadPdfJs();
+    const buf = await f.arrayBuffer();
+    const pdf = await lib.getDocument({ data: buf }).promise;
+    let textLen = 0;
+    for(let p = 1; p <= pdf.numPages; p++){
+      const pg = await pdf.getPage(p);
+      textLen += pageText(await pg.getTextContent()).trim().length;
+    }
+    if(textLen >= 50){
+      aiMsg("このPDFには文字データがあります。上の「PDFから文章を取り込む」（キー不要）を使うのがおすすめです。");
+      return;
+    }
+    const pages = Math.min(pdf.numPages, 3);
+    let draft = "";
+    for(let p = 1; p <= pages; p++){
+      aiMsg("PDFを読み取っています（" + p + " / " + pages + " ページ）…");
+      const pg = await pdf.getPage(p);
+      const vp0 = pg.getViewport({ scale: 1 });
+      const vp = pg.getViewport({ scale: 1280 / vp0.width });
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      await pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+      const blob = await new Promise(res => cv.toBlob(res, "image/jpeg", 0.85));
+      const text = await aiReadImage(blob, aiDraftMode === "sheet" ? AI_SHEET_PROMPT : AI_CARD_PROMPT);
+      draft += (draft ? "\n" : "") + text.trim();
+    }
+    showAiDraft(draft);
+    aiMsg("下書きができました。内容を確認・修正してから「この内容で追加する」を押してください。このままでは保存されません。");
+  }catch(e){ aiMsg("読み取れませんでした：" + (e.message || e)); }
+}
+function saveAiDraft(deckId){
+  const d = getDeck(deckId); if(!d || d.sample) return;
+  const text = document.getElementById("aiDraft").value;
+  if(aiDraftMode === "sheet"){
+    const title = document.getElementById("aiDraftTitle").value.trim();
+    if(!title){ alert("シートのタイトルを入れてください。"); return; }
+    if(!text.trim()){ alert("下書きが空です。"); return; }
+    if(countMasks(text) === 0){ alert("隠したい語句を囲んでください。"); return; }
+    d.sheets.push({ id: uid(), title, body: text }); save(); renderDeck();
+  } else {
+    const parsed = parseCsv(text);
+    if(!parsed.rows.length){ alert("「用語,答え」の形の行が見つかりませんでした。下書きを直してください。"); return; }
+    parsed.rows.forEach(r => { const card = { id: uid(), q: r.q, a: r.a }; if(r.yomi) card.yomi = r.yomi; d.cards.push(card); });
+    save(); renderDeck();
+    alert(parsed.rows.length + "枚のカードを追加しました。" + (parsed.skipped ? parsed.skipped + "行は除きました。" : ""));
+  }
+}
+
 /* ============ シート画面 ============ */
 let sheetState = { open: {} };
 function openSheet(deckId, sheetId){
@@ -635,7 +875,7 @@ function startReview(){
   beginStudy(list, "今日の復習");
 }
 function beginStudy(list, title){
-  session = { list, title, idx: 0, flipped: false, counts: { bad: 0, mid: 0, ok: 0 } };
+  session = { list, title, idx: 0, flipped: false, counts: { bad: 0, mid: 0, ok: 0 }, input: !!(S.settings && S.settings.studyInput), judged: false, judgeOk: false };
   view = { name: "study" };
   renderStudy();
   window.scrollTo(0, 0);
@@ -662,12 +902,32 @@ function renderStudy(){
   app.innerHTML = `
   <button class="backbtn" onclick="endStudy()">← やめる（${esc(session.title)}）</button>
   <p class="small" style="margin:4px 0;">${session.idx + 1} / ${session.list.length} 枚目 ・ ${esc(item.deck.name)}</p>
-  <div class="fcard" onclick="flipCard()">
+  <div class="btnrow" style="margin:6px 0;">
+    <button class="btn ${session.input ? "ghost" : ""}" style="padding:8px;" onclick="toggleStudyInput(false)">👀 めくる</button>
+    <button class="btn ${session.input ? "" : "ghost"}" style="padding:8px;" onclick="toggleStudyInput(true)">⌨️ 入力</button>
+  </div>
+  <div class="fcard" ${session.input ? "" : 'onclick="flipCard()"'}>
     <div class="side">${session.flipped ? "裏 ― 答え" : "表 ― 問題"}</div>
     <div class="txt">${esc(session.flipped ? c.a : c.q)}</div>
-    ${session.flipped ? "" : `<div class="hint">カードをタップすると答えが見えます</div>`}
+    ${session.flipped || session.input ? "" : `<div class="hint">カードをタップすると答えが見えます</div>`}
   </div>
-  ${session.flipped ? `
+  ${session.input ? (session.judged ? `
+  ${session.judgeOk
+    ? `<div class="msg" style="text-align:center; font-size:17px;">⭕ 正解です！</div>`
+    : `<div class="msg" style="text-align:center;">❌ 不正解でした<br>正解は「${esc(c.a)}」です</div>`}
+  <button class="btn" onclick="doGrade('${session.judgeOk ? "ok" : "bad"}')">この判定で次へ（${session.judgeOk ? "覚えた" : "まだ"}として記録）</button>
+  <p class="small" style="text-align:center; margin:4px 0;">判定を変えたいときは、下のボタンでも記録できます</p>
+  <div class="grade">
+    <button class="g-bad" onclick="doGrade('bad')">まだ<small>次は${nx.bad}</small></button>
+    <button class="g-mid" onclick="doGrade('mid')">あと少し<small>次は${nx.mid}</small></button>
+    <button class="g-ok" onclick="doGrade('ok')">覚えた<small>次は${nx.ok}</small></button>
+  </div>` : `
+  <input type="text" id="ansInput" placeholder="答えを入力してください" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault(); judgeInput();}">
+  <button class="btn" onclick="judgeInput()">判定する</button>
+  <div class="btnrow">
+    <button class="btn ghost" onclick="speakQuestion()">🔊 問題を読み上げ</button>
+    <button class="btn ghost stopSpeakBtn hidden" onclick="stopSpeak()">⏹ 停止</button>
+  </div>`) : (session.flipped ? `
   <div class="btnrow">
     <button class="btn ghost" onclick="speakCurrent()">🔊 答えを読み上げ</button>
     <button class="btn ghost stopSpeakBtn hidden" onclick="stopSpeak()">⏹ 停止</button>
@@ -680,11 +940,29 @@ function renderStudy(){
   <div class="btnrow">
     <button class="btn ghost" onclick="speakQuestion()">🔊 問題を読み上げ</button>
     <button class="btn ghost stopSpeakBtn hidden" onclick="stopSpeak()">⏹ 停止</button>
-  </div>`}
+  </div>`)}
   `;
-  if(autoSpeakOn()) speak(session.flipped ? c.a : (c.yomi || c.q));
+  if(autoSpeakOn() && !(session.input && session.judged)) speak(session.flipped ? c.a : (c.yomi || c.q));
 }
 function stopSpeakVisualOnly(){ /* 画面描画のたびに読み上げ状態の表示だけ整える（音声自体は遷移時に停止） */ syncSpeakBtns(speaking); }
+function toggleStudyInput(v){
+  S.settings = S.settings || {};
+  S.settings.studyInput = !!v; save();
+  if(session){ session.input = !!v; session.judged = false; session.judgeOk = false; renderStudy(); }
+}
+function normAnswer(s){ return String(s == null ? "" : s).normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase(); }
+function judgeInput(){
+  if(!session || session.judged) return;
+  const el = document.getElementById("ansInput");
+  const v = el ? el.value : "";
+  if(!v.trim()){ alert("答えを入力してください。"); return; }
+  const c = session.list[session.idx].card;
+  const n1 = normAnswer(v), n2 = normAnswer(c.a);
+  session.judged = true;
+  session.judgeOk = (n1 === n2) || (n1.replace(/ /g, "") === n2.replace(/ /g, ""));
+  renderStudy();
+  if(autoSpeakOn()) speak(c.a);
+}
 function flipCard(){
   if(!session || session.flipped) return;
   session.flipped = true;
@@ -698,6 +976,8 @@ function doGrade(g){
   session.counts[g]++;
   session.idx++;
   session.flipped = false;
+  session.judged = false;
+  session.judgeOk = false;
   renderStudy();
   window.scrollTo(0, 0);
 }
