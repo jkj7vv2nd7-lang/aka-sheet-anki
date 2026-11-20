@@ -98,7 +98,7 @@ footer button{background:none; border:1px solid var(--line); border-radius:9px; 
 
 <script>
 "use strict";
-const APP_VER = "1.2.1";
+const APP_VER = "1.2.2";
 const LSKEY = "aka-sheet-anki-v1";
 document.getElementById("verLabel").textContent = "ver " + APP_VER;
 
@@ -699,7 +699,7 @@ async function aiReadImage(blob, prompt){
     const j = await fetchJson(base + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model, stream: false, messages: [{ role: "user", content: prompt, images: [b64] }] })
-    }, 180000);
+    }, 600000);
     const t = j.message && j.message.content;
     if(!t) throw new Error("AIの返答が空でした");
     return t;
@@ -724,6 +724,11 @@ function aiMsg(html){
 }
 function aiErrText(e){
   const m = String((e && e.message) || e || "");
+  if((e && e.name === "AbortError") || m.includes("aborted")){
+    if(aiSet.provider === "ollama")
+      return "時間がかかりすぎたため中断しました。ローカルAIの初回はモデルの読み込みに時間がかかります。読み込みが終わったあとは速くなるので、もう一度お試しください。何度も中断する場合は、より小さいモデルも選択肢です。";
+    return "時間がかかりすぎたため中断しました。通信環境を確認して、もう一度お試しください。";
+  }
   if(m.includes("Failed to fetch") || m.includes("NetworkError") || m.includes("Load failed")){
     if(aiSet.provider === "ollama")
       return "通信できませんでした。Ollamaが起動していないか、接続許可（環境変数 OLLAMA_ORIGINS=*）の設定が不足している可能性があります。Ollamaを起動し、設定後に再起動してから、もう一度お試しください。";
@@ -731,6 +736,19 @@ function aiErrText(e){
   }
   return "読み取れませんでした：" + m;
 }
+let aiWaitTimer = null, aiWaitLabel = "", aiWaitT0 = 0;
+function aiWaitDraw(){
+  const s = Math.floor((Date.now() - aiWaitT0) / 1000);
+  const note = aiSet.provider === "ollama" ? "（ローカルAIは初回に数分かかることがあります。そのままお待ちください）" : "";
+  aiMsg(aiWaitLabel + "…" + note + "（" + s + "秒経過）");
+}
+function aiWaitStart(label){
+  aiWaitLabel = label; aiWaitT0 = Date.now();
+  if(aiWaitTimer) clearInterval(aiWaitTimer);
+  aiWaitDraw();
+  aiWaitTimer = setInterval(aiWaitDraw, 1000);
+}
+function aiWaitStop(){ if(aiWaitTimer){ clearInterval(aiWaitTimer); aiWaitTimer = null; } }
 function showAiDraft(text){
   const area = document.getElementById("aiDraftArea");
   if(area) area.classList.remove("hidden");
@@ -751,13 +769,14 @@ async function fileToJpegBlob(file){
 async function importAiPhoto(input){
   const f = input.files && input.files[0]; input.value = ""; if(!f) return;
   if(!aiReady()){ aiMsg("AI設定が未完了です。ホームの「AI設定」で接続先とキーを設定してください。"); return; }
-  aiMsg("写真を読み取っています…");
+  aiWaitStart("写真を読み取っています");
   try{
     const blob = await fileToJpegBlob(f);
     const text = await aiReadImage(blob, aiDraftMode === "sheet" ? AI_SHEET_PROMPT : AI_CARD_PROMPT);
     showAiDraft(text.trim());
     aiMsg("下書きができました。内容を確認・修正してから「この内容で追加する」を押してください。このままでは保存されません。");
   }catch(e){ aiMsg(aiErrText(e)); }
+  finally{ aiWaitStop(); }
 }
 async function importAiPdf(input){
   const f = input.files && input.files[0]; input.value = ""; if(!f) return;
@@ -777,9 +796,10 @@ async function importAiPdf(input){
       return;
     }
     const pages = Math.min(pdf.numPages, 3);
+    aiWaitStart("PDFを読み取っています");
     let draft = "";
     for(let p = 1; p <= pages; p++){
-      aiMsg("PDFを読み取っています（" + p + " / " + pages + " ページ）…");
+      aiWaitLabel = "PDFを読み取っています（" + p + " / " + pages + " ページ）";
       const pg = await pdf.getPage(p);
       const vp0 = pg.getViewport({ scale: 1 });
       const vp = pg.getViewport({ scale: 1280 / vp0.width });
@@ -793,6 +813,7 @@ async function importAiPdf(input){
     showAiDraft(draft);
     aiMsg("下書きができました。内容を確認・修正してから「この内容で追加する」を押してください。このままでは保存されません。");
   }catch(e){ aiMsg(aiErrText(e)); }
+  finally{ aiWaitStop(); }
 }
 function saveAiDraft(deckId){
   const d = getDeck(deckId); if(!d || d.sample) return;
