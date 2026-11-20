@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>赤シート暗記｜タップでめくる、デジタルの赤シート</title>
+<meta name="description" content="文章の重要語を隠して覚えるシートモードと、復習つき暗記カード。受験生のための暗記学習アプリです。">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#cf3a2d">
+<meta property="og:title" content="赤シート暗記">
+<meta property="og:description" content="タップでめくる、デジタルの赤シート。シートモード×暗記カード（復習つき）。">
+<meta property="og:image" content="https://jkj7vv2nd7-lang.github.io/aka-sheet-anki/og-image.png">
+<meta property="og:type" content="website">
+<style>
+:root{
+  --red:#d43a2f; --red-d:#b22820; --red-soft:#ffe7e2;
+  --paper:#fff8ee; --card:#fffdf8; --line:#e8dcc8;
+  --ink:#2b2b26; --mut:#6d675a; --gold:#b07d2b; --teal:#14655a;
+}
+*{box-sizing:border-box;}
+html,body{margin:0; padding:0;}
+body{background:var(--paper); color:var(--ink); font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif; font-size:16px; line-height:1.7;}
+header{background:linear-gradient(135deg,#e05244,#c03327); color:#fff; padding:16px 16px 14px; box-shadow:0 2px 8px rgba(150,40,25,.25);}
+header .hwrap{max-width:660px; margin:0 auto;}
+header h1{font-size:22px; margin:0; letter-spacing:.03em;}
+header p{margin:2px 0 0; font-size:13px; opacity:.92;}
+main{max-width:660px; margin:0 auto; padding:14px 12px 30px;}
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin:12px 0; box-shadow:0 1px 4px rgba(90,60,20,.06);}
+h2{font-size:18px; margin:2px 0 8px;}
+h3{font-size:15.5px; margin:14px 0 6px; color:var(--red-d);}
+.small{font-size:13px; color:var(--mut);}
+.btn{display:block; width:100%; background:var(--red); color:#fff; border:none; border-radius:11px; padding:13px; font-size:16px; font-weight:700; cursor:pointer; margin:8px 0; text-align:center;}
+.btn.sub{background:#fff; color:var(--red-d); border:1.5px solid var(--red);}
+.btn.ghost{background:#fff; color:var(--ink); border:1px solid var(--line); font-weight:400;}
+.btn.teal{background:var(--teal);}
+.btn:disabled{background:#d8d2c4; color:#8a8474; cursor:default; border:none;}
+.btnrow{display:flex; gap:8px;}
+.btnrow .btn{flex:1;}
+input[type="text"], textarea, select{
+  width:100%; font-size:16px; padding:11px 12px; border:1.5px solid var(--line); border-radius:11px; background:#fff; color:var(--ink);
+}
+textarea{min-height:110px; line-height:1.7; resize:vertical;}
+label{font-size:13.5px; font-weight:700; color:var(--mut); display:block; margin:10px 0 4px;}
+.badge{display:inline-block; font-size:11.5px; font-weight:700; padding:1px 8px; border-radius:999px; vertical-align:middle;}
+.badge.sample{background:#fdf0d5; color:var(--gold); border:1px solid var(--gold);}
+.badge.due{background:var(--red); color:#fff;}
+.badge.prog{background:#eef4f2; color:var(--teal); border:1px solid #bcd4cd;}
+.deckitem{display:flex; align-items:center; gap:10px; padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer;}
+.deckitem:last-child{border-bottom:none;}
+.deckitem .grow{flex:1; min-width:0;}
+.deckitem .name{font-weight:700; font-size:16.5px;}
+.rowitem{display:flex; align-items:center; gap:8px; padding:9px 2px; border-bottom:1px solid var(--line);}
+.rowitem:last-child{border-bottom:none;}
+.rowitem .grow{flex:1; min-width:0; overflow-wrap:anywhere;}
+.iconbtn{background:#fff; border:1px solid var(--line); border-radius:9px; padding:6px 11px; font-size:13.5px; cursor:pointer; white-space:nowrap;}
+.iconbtn.red{color:var(--red-d); border-color:#eec5c0;}
+.hidden{display:none !important;}
+.backbtn{background:none; border:none; color:var(--red-d); font-size:15px; font-weight:700; cursor:pointer; padding:6px 0;}
+.stat{display:flex; gap:10px; text-align:center;}
+.stat .box{flex:1; background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 4px;}
+.stat .num{font-size:24px; font-weight:800; color:var(--red-d); line-height:1.2;}
+.stat .lbl{font-size:12px; color:var(--mut);}
+.sheetbody{font-size:17.5px; line-height:2.15; white-space:pre-wrap; overflow-wrap:anywhere;}
+.mask{display:inline-block; min-width:2.4em; text-align:center; padding:0 .35em; margin:0 .08em; border-radius:.35em;
+  background:linear-gradient(180deg,#e2574a,#cf3a2d); color:transparent; cursor:pointer;
+  user-select:none; -webkit-user-select:none; box-shadow:inset 0 0 0 1px rgba(120,20,10,.25);}
+.mask.open{background:var(--red-soft); color:var(--red-d); font-weight:700; box-shadow:inset 0 0 0 1px #f0b7ae;}
+.fcard{min-height:230px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  background:var(--card); border:1.5px solid var(--line); border-radius:16px; padding:24px 18px; cursor:pointer; box-shadow:0 2px 8px rgba(90,60,20,.08);}
+.fcard .side{font-size:12px; font-weight:700; letter-spacing:.15em; color:var(--mut); margin-bottom:10px;}
+.fcard .txt{font-size:23px; font-weight:700; line-height:1.6; overflow-wrap:anywhere;}
+.fcard .hint{font-size:13px; color:var(--mut); margin-top:14px;}
+.grade{display:flex; gap:8px; margin-top:12px;}
+.grade button{flex:1; border:none; border-radius:12px; padding:12px 4px; font-size:16px; font-weight:700; cursor:pointer; color:#fff;}
+.grade button small{display:block; font-size:11.5px; font-weight:400; opacity:.9; margin-top:2px;}
+.grade .g-bad{background:#c2543a;}
+.grade .g-mid{background:var(--gold);}
+.grade .g-ok{background:var(--teal);}
+footer{max-width:660px; margin:0 auto; padding:6px 12px 30px; color:var(--mut); font-size:13px; text-align:center;}
+footer button{background:none; border:1px solid var(--line); border-radius:9px; padding:7px 14px; font-size:13px; color:var(--ink); cursor:pointer; background:#fff;}
+.msg{background:#fdf6e3; border:1px dashed var(--gold); border-radius:10px; padding:9px 13px; font-size:14px; margin:10px 0;}
+</style>
+</head>
+<body>
+<header>
+<div class="hwrap">
+<h1>🟥 赤シート暗記</h1>
+<p>タップでめくる、デジタルの赤シート ― シートモード × 暗記カード</p>
+</div>
+</header>
+<main id="app"></main>
+<footer>
+<div>赤シート暗記 <span id="verLabel"></span> ／ 記録はこの端末の中だけに保存されます</div>
+<div style="margin-top:8px;"><button onclick="updateApp()">最新の版に更新する</button></div>
+</footer>
+
+<script>
+"use strict";
+const APP_VER = "1.0.0";
+const LSKEY = "aka-sheet-anki-v1";
+document.getElementById("verLabel").textContent = "ver " + APP_VER;
+
+/* ============ 内蔵サンプル ============ */
+const SAMPLE_DECKS = [
+{
+id: "sample-eng", name: "英単語（高校レベル）", sample: true,
+sheets: [{
+id: "sample-eng-s1", title: "例文で覚える重要語",
+body: "The 【government】 announced a new policy to protect the 【environment】.\n（政府は、環境を守るための新しい政策を発表した。）\nIt is 【necessary】 to 【increase】 our knowledge from 【experience】.\n（経験から知識を増やすことが必要だ。）"
+}],
+cards: [
+{ id: "se1", q: "significant", a: "重要な"},
+{ id: "se2", q: "available", a: "利用できる・手に入る"},
+{ id: "se3", q: "increase", a: "増える・増やす"},
+{ id: "se4", q: "environment", a: "環境"},
+{ id: "se5", q: "government", a: "政府"},
+{ id: "se6", q: "experience", a: "経験"},
+{ id: "se7", q: "necessary", a: "必要な"},
+{ id: "se8", q: "development", a: "発達・開発"},
+{ id: "se9", q: "information", a: "情報"},
+{ id: "se10", q: "different", a: "異なる"}
+]
+},
+{
+id: "sample-hist", name: "歴史年号（日本史）", sample: true,
+sheets: [{
+id: "sample-hist-s1", title: "都と幕府のうつり変わり",
+body: "【710年】に【平城京】へ、【794年】に【平安京】へ都が移った。\n【1192年】、【源頼朝】が征夷大将軍になり【鎌倉】に幕府を開く。\n【1603年】には【徳川家康】が【江戸】に幕府を開いた。"
+}],
+cards: [
+{ id: "sh1", q: "710年", a: "平城京に都が移る"},
+{ id: "sh2", q: "794年", a: "平安京に都が移る"},
+{ id: "sh3", q: "1192年", a: "源頼朝が征夷大将軍になり、鎌倉幕府を開く"},
+{ id: "sh4", q: "1333年", a: "鎌倉幕府が滅びる"},
+{ id: "sh5", q: "1582年", a: "本能寺の変（織田信長が倒れる）"},
+{ id: "sh6", q: "1603年", a: "徳川家康が江戸幕府を開く"},
+{ id: "sh7", q: "1853年", a: "ペリーが浦賀に来航する"},
+{ id: "sh8", q: "1867年", a: "大政奉還"},
+{ id: "sh9", q: "1868年", a: "明治維新（王政復古の大号令）"},
+{ id: "sh10", q: "1945年", a: "第二次世界大戦が終わる"}
+]
+},
+{
+id: "sample-sci", name: "理科用語（中学）", sample: true,
+sheets: [{
+id: "sample-sci-s1", title: "植物のはたらき",
+body: "植物は、葉で【光合成】を行い、光のエネルギーを使って【デンプン】を作る。このとき【酸素】が放出される。\n根から吸い上げられた水は、葉から【蒸散】によって水蒸気として出ていく。"
+}],
+cards: [
+{ id: "ss1", q: "光合成", a: "植物が光のエネルギーを使って、デンプンなどを作るはたらき"},
+{ id: "ss2", q: "蒸散", a: "植物の葉などから、水が水蒸気として出ていくこと"},
+{ id: "ss3", q: "震源", a: "地震が発生した地下の場所"},
+{ id: "ss4", q: "マグマ", a: "地下で岩石がどろどろに溶けたもの"},
+{ id: "ss5", q: "オームの法則", a: "電圧は電流と抵抗の積に等しい（V = I × R）"},
+{ id: "ss6", q: "慣性の法則", a: "物体は、外から力を受けない限り、今の運動の状態を続けようとする法則"},
+{ id: "ss7", q: "酸化", a: "物質が酸素と結びつく化学変化"},
+{ id: "ss8", q: "中和", a: "酸とアルカリが互いの性質を打ち消し合う反応"},
+{ id: "ss9", q: "DNA", a: "遺伝子の本体となる物質"},
+{ id: "ss10", q: "蒸発", a: "液体が表面から気体に変わること"}
+]
+}
+];
+
+/* ============ 状態 ============ */
+let S = { decks: [], progress: {}, activity: {}};
+function load(){
+try{
+const raw = localStorage.getItem(LSKEY);
+if(raw){ const d = JSON.parse(raw); if(d && typeof d === "object"){ S.decks = d.decks || []; S.progress = d.progress || {}; S.activity = d.activity || {};}}
+}catch(e){}
+}
+function save(){
+try{ localStorage.setItem(LSKEY, JSON.stringify(S));}
+catch(e){
+/* 容量不足などでは記録を守るため、古い活動記録を落として再試行 */
+try{ S.activity = {}; localStorage.setItem(LSKEY, JSON.stringify(S));}catch(e2){}
+}
+}
+load();
+
+let uidSeq = 0;
+function uid(){ uidSeq++; return "u" + Date.now().toString(36) + uidSeq.toString(36) + Math.floor(Math.random()*999).toString(36);}
+function allDecks(){ return SAMPLE_DECKS.concat(S.decks);}
+function getDeck(id){ return allDecks().find(d => d.id === id) || null;}
+function esc(s){ return String(s == null? "": s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));}
+
+/* ============ 日付とSRS ============ */
+function todayStr(d){ const t = d || new Date(); return t.getFullYear() + "-" + String(t.getMonth()+1).padStart(2,"0") + "-" + String(t.getDate()).padStart(2,"0");}
+function addDays(str, n){ const d = new Date(str + "T00:00:00"); d.setDate(d.getDate() + n); return todayStr(d);}
+function prog(cardId){ return S.progress[cardId] || null;}
+function isDue(cardId){ const p = prog(cardId); return!!p && p.due <= todayStr();}
+function isNew(cardId){ return!prog(cardId);}
+function dueCardsOf(deck){ return deck.cards.filter(c => isDue(c.id));}
+function allDueCards(){
+const out = [];
+allDecks().forEach(d => d.cards.forEach(c => { if(isDue(c.id)) out.push({ deck: d, card: c});}));
+return out;
+}
+function learnedCount(){ return Object.keys(S.progress).length;}
+function streakDays(){
+let n = 0; let cur = todayStr();
+if(!S.activity[cur]) cur = addDays(cur, -1); /* 今日まだなら昨日から数える */
+while(S.activity[cur]){ n++; cur = addDays(cur, -1);}
+return n;
+}
+/* 判定：まだ→翌日（stage 0）／あと少し→3日後（stage不変）／覚えた→stage+1（1で7日、2以上で30日） */
+function grade(cardId, g){
+const p = prog(cardId) || { stage: 0, reps: 0};
+p.reps = (p.reps || 0) + 1; p.last = g;
+if(g === "bad"){ p.stage = 0; p.due = addDays(todayStr(), 1);}
+else if(g === "mid"){ p.due = addDays(todayStr(), 3);}
+else { p.stage = (p.stage || 0) + 1; p.due = addDays(todayStr(), p.stage >= 2? 30: 7);}
+S.progress[cardId] = p;
+S.activity[todayStr()] = true;
+save();
+return p;
+}
+function nextLabel(cardId){
+const p = prog(cardId);
+if(!p) return "未学習";
+if(p.due <= todayStr()) return "今日が復習日";
+if(p.due === addDays(todayStr(), 1)) return "次回：明日";
+const d = Math.round((new Date(p.due + "T00:00:00") - new Date(todayStr() + "T00:00:00")) / 86400000);
+return "次回：" + d + "日後";
+}
+function gradeNextDays(cardId){
+const p = prog(cardId);
+const st = p? (p.stage || 0): 0;
+return { bad: "明日", mid: "3日後", ok: (st + 1 >= 2? "30日後": "7日後")};
+}
+
+/* ============ 読み上げ ============ */
+let speaking = false;
+function speak(text){
+stopSpeak();
+if(!("speechSynthesis" in window)) { alert("この端末では読み上げが使えません。"); return;}
+const u = new SpeechSynthesisUtterance(String(text));
+u.lang = /[぀-ヿ一-鿿]/.test(String(text))? "ja-JP": "en-US";
+u.rate = 0.95;
+speaking = true; syncSpeakBtns(true);
+u.onend = u.onerror = ()=>{ speaking = false; syncSpeakBtns(false);};
+speechSynthesis.speak(u);
+}
+function stopSpeak(){
+if("speechSynthesis" in window) speechSynthesis.cancel();
+speaking = false; syncSpeakBtns(false);
+}
+function syncSpeakBtns(on){
+document.querySelectorAll(".stopSpeakBtn").forEach(b => b.classList.toggle("hidden",!on));
+}
+
+/* ============ 画面遷移 ============ */
+const app = document.getElementById("app");
+let view = { name: "home"};
+function go(v){ stopSpeak(); view = v; render(); window.scrollTo(0, 0);}
+function render(){
+if(view.name === "home") renderHome();
+else if(view.name === "deck") renderDeck();
+else if(view.name === "sheet") renderSheet();
+else if(view.name === "study") renderStudy();
+}
+
+/* ============ ホーム ============ */
+function renderHome(){
+const due = allDueCards().length;
+app.innerHTML = `
+<div class="card">
+<h2>📅 今日の復習</h2>
+${due > 0
+? `<p style="margin:4px 0;">復習の時期が来たカードが <b style="font-size:20px; color:var(--red-d);">${due}枚</b> あります。</p>
+<button class="btn" onclick="startReview()">復習をはじめる（${due}枚）</button>`
+: `<p style="margin:4px 0;">今日の復習はありません。よく続けられています。</p>
+<button class="btn" disabled>復習はありません</button>`}
+<div class="stat" style="margin-top:10px;">
+<div class="box"><div class="num">${streakDays()}</div><div class="lbl">連続学習日数</div></div>
+<div class="box"><div class="num">${learnedCount()}</div><div class="lbl">学習済みカード</div></div>
+<div class="box"><div class="num">${allDecks().reduce((n, d) => n + d.cards.length, 0)}</div><div class="lbl">全カード数</div></div>
+</div>
+</div>
+<div class="card">
+<h2>📚 デッキ</h2>
+${allDecks().map(d => {
+const dc = dueCardsOf(d).length;
+return `<div class="deckitem" onclick="go({name:'deck', deckId:'${d.id}'})">
+<div class="grow">
+<div class="name">${esc(d.name)} ${d.sample? '<span class="badge sample">サンプル</span>': ''} ${dc? `<span class="badge due">復習 ${dc}</span>`: ''}</div>
+<div class="small">カード ${d.cards.length}枚 ・ シート ${d.sheets.length}本</div>
+</div>
+<div style="font-size:20px; color:var(--mut);">›</div>
+</div>`;
+}).join("")}
+</div>
+<div class="card">
+<h2>➕ 新しいデッキを作る</h2>
+<label>デッキの名前</label>
+<input type="text" id="newDeckName" placeholder="例：英単語 Unit 3、古文単語 など">
+<button class="btn sub" onclick="createDeck()">デッキを作る</button>
+<h3>バックアップから戻す</h3>
+<p class="small">書き出したJSONファイルを選ぶと、新しいデッキとして読み込まれます。</p>
+<input type="file" id="importFile" accept=".json,application/json" onchange="importDeckFile(this)">
+</div>`;
+}
+function createDeck(){
+const name = document.getElementById("newDeckName").value.trim();
+if(!name){ alert("デッキの名前を入れてください。"); return;}
+const d = { id: uid(), name, sheets: [], cards: []};
+S.decks.push(d); save();
+go({ name: "deck", deckId: d.id});
+}
+
+/* ============ デッキ画面 ============ */
+function renderDeck(){
+const d = getDeck(view.deckId);
+if(!d){ go({ name: "home"}); return;}
+const due = dueCardsOf(d).length;
+const fresh = d.cards.filter(c => isNew(c.id)).length;
+const studyN = due + fresh;
+app.innerHTML = `
+<button class="backbtn" onclick="go({name:'home'})">← デッキ一覧へ</button>
+<div class="card">
+<h2>${esc(d.name)} ${d.sample? '<span class="badge sample">サンプル</span>': ''}</h2>
+<p class="small" style="margin:2px 0;">カード ${d.cards.length}枚（復習 ${due}枚 ・ 未学習 ${fresh}枚）／ シート ${d.sheets.length}本</p>
+${studyN > 0
+? `<button class="btn" onclick="startDeckStudy('${d.id}')">カード学習をはじめる（${studyN}枚）</button>`
+: `<button class="btn" disabled>今日の学習分は終わっています</button>`}
+${d.sample? `<button class="btn ghost" onclick="copyDeck('${d.id}')">コピーして自分のデッキにする</button>`: ``}
+</div>
+<div class="card">
+<h2>🟥 シート（文章の暗記）</h2>
+${d.sheets.length? d.sheets.map(sh => `
+<div class="rowitem">
+<div class="grow"><b>${esc(sh.title)}</b><div class="small">隠す語句 ${countMasks(sh.body)} か所</div></div>
+<button class="iconbtn" onclick="openSheet('${d.id}','${sh.id}')">開く</button>
+${d.sample? "": `<button class="iconbtn red" onclick="deleteSheet('${d.id}','${sh.id}')">削除</button>`}
+</div>`).join(""): `<p class="small">まだシートがありません。</p>`}
+${d.sample? "": `
+<h3>シートを追加する</h3>
+<p class="small">文章を貼り、隠したい語句を【　】で囲んでください。囲んだ部分が赤シートで隠れます。</p>
+<label>タイトル</label>
+<input type="text" id="sheetTitle" placeholder="例：第3課 本文">
+<label>本文</label>
+<textarea id="sheetBody" placeholder="例：光合成は、葉の【葉緑体】で行われ、【酸素】が放出される。"></textarea>
+<button class="btn sub" onclick="addSheet('${d.id}')">シートを追加する</button>`}
+</div>
+<div class="card">
+<h2>🃏 カード</h2>
+${d.cards.length? d.cards.map(c => `
+<div class="rowitem">
+<div class="grow"><b>${esc(c.q)}</b> → ${esc(c.a)}<div class="small"><span class="badge prog">${nextLabel(c.id)}</span></div></div>
+${d.sample? "": `<button class="iconbtn red" onclick="deleteCard('${d.id}','${c.id}')">削除</button>`}
+</div>`).join(""): `<p class="small">まだカードがありません。</p>`}
+${d.sample? "": `
+<h3>カードを追加する</h3>
+<label>表（問題・用語）</label>
+<input type="text" id="cardQ" placeholder="例：蒸散">
+<label>裏（答え）</label>
+<input type="text" id="cardA" placeholder="例：葉から水が水蒸気として出ていくこと">
+<button class="btn sub" onclick="addCard('${d.id}')">カードを追加する</button>
+<h3>CSV / TSV でまとめて追加</h3>
+<p class="small">1行に「用語,答え」の2列で貼ってください。タブ区切り（TSV）でも読み込めます。ファイルからも読み込めます。</p>
+<textarea id="csvText" style="min-height:90px;" placeholder="蒸散,葉から水が出ていくこと&#10;光合成,光でデンプンを作るはたらき"></textarea>
+<div class="btnrow">
+<button class="btn ghost" onclick="importCsvText('${d.id}')">貼った内容を読み込む</button>
+</div>
+<input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv,text/plain" onchange="importCsvFile(this,'${d.id}')">
+<div id="csvMsg"></div>`}
+</div>
+<div class="card">
+<h2>💾 バックアップ</h2>
+<button class="btn ghost" onclick="exportDeck('${d.id}')">このデッキをJSONで書き出す</button>
+${d.sample? "": `<button class="btn ghost" style="color:var(--red-d); border-color:#eec5c0;" onclick="deleteDeck('${d.id}')">このデッキを削除する</button>`}
+</div>`;
+}
+function countMasks(body){ return String(body).split("\u3010").length - 1; }
+function addSheet(deckId){
+const d = getDeck(deckId); if(!d || d.sample) return;
+const title = document.getElementById("sheetTitle").value.trim();
+const body = document.getElementById("sheetBody").value;
+if(!title){ alert("タイトルを入れてください。"); return;}
+if(!body.trim()){ alert("本文を入れてください。"); return;}
+if(countMasks(body) === 0){ alert("隠したい語句を【　】で囲んでください。"); return;}
+d.sheets.push({ id: uid(), title, body}); save(); renderDeck();
+}
+function deleteSheet(deckId, sheetId){
+const d = getDeck(deckId); if(!d || d.sample) return;
+if(!confirm("このシートを削除しますか？")) return;
+d.sheets = d.sheets.filter(s => s.id!== sheetId); save(); renderDeck();
+}
+function addCard(deckId){
+const d = getDeck(deckId); if(!d || d.sample) return;
+const q = document.getElementById("cardQ").value.trim();
+const a = document.getElementById("cardA").value.trim();
+if(!q ||!a){ alert("表と裏の両方を入れてください。"); return;}
+d.cards.push({ id: uid(), q, a}); save(); renderDeck();
+}
+function deleteCard(deckId, cardId){
+const d = getDeck(deckId); if(!d || d.sample) return;
+if(!confirm("このカードを削除しますか？（学習記録も消えます）")) return;
+d.cards = d.cards.filter(c => c.id!== cardId);
+delete S.progress[cardId]; save(); renderDeck();
+}
+function deleteDeck(deckId){
+const d = getDeck(deckId); if(!d || d.sample) return;
+if(!confirm("デッキ「" + d.name + "」を削除しますか？（カードと学習記録も消えます）")) return;
+d.cards.forEach(c => delete S.progress[c.id]);
+S.decks = S.decks.filter(x => x.id!== deckId); save();
+go({ name: "home"});
+}
+function copyDeck(deckId){
+const src = getDeck(deckId); if(!src) return;
+const d = { id: uid(), name: src.name + "（コピー）",
+sheets: src.sheets.map(s => ({ id: uid(), title: s.title, body: s.body})),
+cards: src.cards.map(c => ({ id: uid(), q: c.q, a: c.a}))};
+S.decks.push(d); save();
+go({ name: "deck", deckId: d.id});
+}
+function parseCsv(text){
+const out = []; let skipped = 0;
+String(text).split(/\r?\n/).forEach(line => {
+const t = line.trim(); if(!t) return;
+let parts;
+if(t.includes("\t")) parts = t.split("\t");
+else { const i = t.indexOf(","); parts = i >= 0? [t.slice(0, i), t.slice(i + 1)]: [t];}
+const clean = v => String(v == null? "": v).trim().replace(/^"|"$/g, "");
+const q = clean(parts[0]), a = clean(parts[1]);
+if(q && a) out.push({ q, a}); else skipped++;
+});
+return { rows: out, skipped};
+}
+function importCsvText(deckId){
+const d = getDeck(deckId); if(!d || d.sample) return;
+const { rows, skipped} = parseCsv(document.getElementById("csvText").value);
+rows.forEach(r => d.cards.push({ id: uid(), q: r.q, a: r.a}));
+save();
+document.getElementById("csvMsg").innerHTML = `<div class="msg">${rows.length}枚のカードを追加しました。${skipped? skipped + "行は2列になっていなかったため除きました。": ""}</div>`;
+setTimeout(() => renderDeck(), 1200);
+}
+function importCsvFile(input, deckId){
+const f = input.files && input.files[0]; if(!f) return;
+const d = getDeck(deckId); if(!d || d.sample) return;
+const r = new FileReader();
+r.onload = () => {
+const { rows, skipped} = parseCsv(String(r.result || ""));
+rows.forEach(x => d.cards.push({ id: uid(), q: x.q, a: x.a}));
+save(); renderDeck();
+alert(rows.length + "枚のカードを追加しました。" + (skipped? skipped + "行は除きました。": ""));
+};
+r.readAsText(f);
+}
+function exportDeck(deckId){
+const d = getDeck(deckId); if(!d) return;
+const data = { app: "aka-sheet-anki", version: 1, name: d.name,
+sheets: d.sheets.map(s => ({ title: s.title, body: s.body})),
+cards: d.cards.map(c => ({ q: c.q, a: c.a}))};
+const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json"});
+const file = new File([blob], "aka-deck.json", { type: "application/json"});
+if(navigator.canShare && navigator.canShare({ files: [file]})){
+navigator.share({ files: [file]}).catch(() => downloadBlob(blob));
+} else downloadBlob(blob);
+}
+function downloadBlob(blob){
+const a = document.createElement("a");
+a.href = URL.createObjectURL(blob); a.download = "aka-deck.json"; a.click();
+setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function importDeckFile(input){
+const f = input.files && input.files[0]; if(!f) return;
+const r = new FileReader();
+r.onload = () => {
+try{
+const data = JSON.parse(String(r.result || ""));
+if(!data ||!Array.isArray(data.cards)) throw new Error("shape");
+const d = { id: uid(), name: String(data.name || "読み込んだデッキ"),
+sheets: (Array.isArray(data.sheets)? data.sheets: []).filter(s => s && s.body).map(s => ({ id: uid(), title: String(s.title || "シート"), body: String(s.body)})),
+cards: data.cards.filter(c => c && c.q && c.a).map(c => ({ id: uid(), q: String(c.q), a: String(c.a)}))};
+S.decks.push(d); save();
+go({ name: "deck", deckId: d.id});
+}catch(e){ alert("読み込めませんでした。赤シート暗記のJSONファイルか確認してください。");}
+};
+r.readAsText(f);
+}
+/* ============ シート画面 ============ */
+let sheetState = { open: {} };
+function openSheet(deckId, sheetId){
+  sheetState = { open: {} };
+  go({ name: "sheet", deckId, sheetId });
+}
+function renderSheet(){
+  const d = getDeck(view.deckId);
+  const sh = d && d.sheets.find(s => s.id === view.sheetId);
+  if(!d || !sh){ go({ name: "home" }); return; }
+  const total = countMasks(sh.body);
+  const opened = Object.values(sheetState.open).filter(Boolean).length;
+  app.innerHTML = `
+  <button class="backbtn" onclick="go({name:'deck', deckId:'${d.id}'})">← デッキへ戻る</button>
+  <div class="card">
+    <h2>🟥 ${esc(sh.title)}</h2>
+    <p class="small" style="margin:2px 0;">赤い部分をタップすると、隠れた語句が見えます。もう一度タップすると隠れます。</p>
+    <div class="btnrow">
+      <button class="btn sub" onclick="sheetAll(true)">全部めくる</button>
+      <button class="btn sub" onclick="sheetAll(false)">全部隠す</button>
+    </div>
+    <p class="small" id="sheetCount">めくった数：${opened} / ${total}</p>
+    <div class="sheetbody">${renderSheetBody(sh.body)}</div>
+  </div>`;
+}
+function renderSheetBody(body){
+  let i = 0;
+  return esc(body).replace(/【([^】]+)】/g, (m, w) => {
+    const idx = i++;
+    const on = !!sheetState.open[idx];
+    return `<span class="mask${on ? " open" : ""}" data-mi="${idx}" onclick="toggleMask(${idx})">${w}</span>`;
+  });
+}
+function toggleMask(i){
+  sheetState.open[i] = !sheetState.open[i];
+  renderSheet();
+}
+function sheetAll(on){
+  const d = getDeck(view.deckId);
+  const sh = d && d.sheets.find(s => s.id === view.sheetId);
+  if(!sh) return;
+  const total = countMasks(sh.body);
+  sheetState.open = {};
+  for(let i = 0; i < total; i++) sheetState.open[i] = on;
+  renderSheet();
+}
+
+/* ============ カード学習 ============ */
+let session = null;
+let currentAnswer = "";
+function speakCurrent(){ if(currentAnswer) speak(currentAnswer); }
+function startDeckStudy(deckId){
+  const d = getDeck(deckId); if(!d) return;
+  const list = [];
+  d.cards.forEach(c => { if(isDue(c.id) || isNew(c.id)) list.push({ deck: d, card: c }); });
+  if(!list.length){ alert("今日の学習分は終わっています。"); return; }
+  beginStudy(list, d.name + " の学習");
+}
+function startReview(){
+  const list = allDueCards();
+  if(!list.length){ alert("今日の復習はありません。"); return; }
+  beginStudy(list, "今日の復習");
+}
+function beginStudy(list, title){
+  session = { list, title, idx: 0, flipped: false, counts: { bad: 0, mid: 0, ok: 0 } };
+  view = { name: "study" };
+  renderStudy();
+  window.scrollTo(0, 0);
+}
+function renderStudy(){
+  if(!session){ go({ name: "home" }); return; }
+  stopSpeakVisualOnly();
+  if(session.idx >= session.list.length){
+    app.innerHTML = `
+    <div class="card" style="text-align:center;">
+      <div style="font-size:44px;">🎉</div>
+      <h2>おつかれさまでした</h2>
+      <p>${session.list.length}枚のカードを学習しました。</p>
+      <p class="small">覚えた ${session.counts.ok}枚 ／ あと少し ${session.counts.mid}枚 ／ まだ ${session.counts.bad}枚</p>
+      <button class="btn" onclick="endStudy()">ホームへ戻る</button>
+    </div>`;
+    return;
+  }
+  const item = session.list[session.idx];
+  const c = item.card;
+  currentAnswer = c.a;
+  const nx = gradeNextDays(c.id);
+  app.innerHTML = `
+  <button class="backbtn" onclick="endStudy()">← やめる（${esc(session.title)}）</button>
+  <p class="small" style="margin:4px 0;">${session.idx + 1} / ${session.list.length} 枚目 ・ ${esc(item.deck.name)}</p>
+  <div class="fcard" onclick="flipCard()">
+    <div class="side">${session.flipped ? "裏 ― 答え" : "表 ― 問題"}</div>
+    <div class="txt">${esc(session.flipped ? c.a : c.q)}</div>
+    ${session.flipped ? "" : `<div class="hint">カードをタップすると答えが見えます</div>`}
+  </div>
+  ${session.flipped ? `
+  <div class="btnrow">
+    <button class="btn ghost" onclick="speakCurrent()">🔊 答えを読み上げ</button>
+    <button class="btn ghost stopSpeakBtn hidden" onclick="stopSpeak()">⏹ 停止</button>
+  </div>
+  <div class="grade">
+    <button class="g-bad" onclick="doGrade('bad')">まだ<small>次は${nx.bad}</small></button>
+    <button class="g-mid" onclick="doGrade('mid')">あと少し<small>次は${nx.mid}</small></button>
+    <button class="g-ok" onclick="doGrade('ok')">覚えた<small>次は${nx.ok}</small></button>
+  </div>` : ``}`;
+}
+function stopSpeakVisualOnly(){ /* 画面描画のたびに読み上げ状態の表示だけ整える（音声自体は遷移時に停止） */ syncSpeakBtns(speaking); }
+function flipCard(){
+  if(!session || session.flipped) return;
+  session.flipped = true;
+  renderStudy();
+}
+function doGrade(g){
+  if(!session) return;
+  const item = session.list[session.idx];
+  stopSpeak();
+  grade(item.card.id, g);
+  session.counts[g]++;
+  session.idx++;
+  session.flipped = false;
+  renderStudy();
+  window.scrollTo(0, 0);
+}
+function endStudy(){
+  session = null;
+  go({ name: "home" });
+}
+
+/* ============ 更新ボタン・初期化 ============ */
+function updateApp(){
+  const done = () => location.reload();
+  if("caches" in window){
+    caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).then(done).catch(done);
+  } else done();
+}
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+}
+render();
+</script>
+</body>
+</html>
