@@ -1,4 +1,4 @@
-const CACHE = "aka-v1.0.0";
+const CACHE = "aka-v1.1.0";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./apple-touch-icon.png", "./icon-192.png", "./icon-512.png", "./og-image.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -8,6 +8,8 @@ self.addEventListener("activate", e => {
 });
 self.addEventListener("fetch", e => {
   if(e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  if(url.origin !== self.location.origin) return; /* CDN（pdf.js）などはキャッシュしない */
   e.respondWith(
     caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
       const copy = res.clone();

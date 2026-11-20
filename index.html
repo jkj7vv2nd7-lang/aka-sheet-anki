@@ -98,7 +98,7 @@ footer button{background:none; border:1px solid var(--line); border-radius:9px; 
 
 <script>
 "use strict";
-const APP_VER = "1.0.0";
+const APP_VER = "1.1.0";
 const LSKEY = "aka-sheet-anki-v1";
 document.getElementById("verLabel").textContent = "ver " + APP_VER;
 
@@ -164,11 +164,11 @@ cards: [
 ];
 
 /* ============ 状態 ============ */
-let S = { decks: [], progress: {}, activity: {}};
+let S = { decks: [], progress: {}, activity: {}, settings: { autoSpeak: false } };
 function load(){
 try{
 const raw = localStorage.getItem(LSKEY);
-if(raw){ const d = JSON.parse(raw); if(d && typeof d === "object"){ S.decks = d.decks || []; S.progress = d.progress || {}; S.activity = d.activity || {};}}
+if(raw){ const d = JSON.parse(raw); if(d && typeof d === "object"){ S.decks = d.decks || []; S.progress = d.progress || {}; S.activity = d.activity || {}; S.settings = Object.assign({ autoSpeak: false }, d.settings || {}); }}
 }catch(e){}
 }
 function save(){
@@ -280,6 +280,13 @@ ${due > 0
 </div>
 </div>
 <div class="card">
+<h2>⚙️ 設定</h2>
+<label style="display:flex; align-items:center; gap:10px; font-size:15.5px; color:var(--ink); font-weight:400; margin:0;">
+<input type="checkbox" id="autoSpeakSw" ${autoSpeakOn() ? "checked" : ""} onchange="toggleAutoSpeak(this.checked)" style="width:22px; height:22px; flex:none;">
+<span>自動読み上げ（カードが表示されたときと、答えを開いたときに読み上げます）</span>
+</label>
+</div>
+<div class="card">
 <h2>📚 デッキ</h2>
 ${allDecks().map(d => {
 const dc = dueCardsOf(d).length;
@@ -302,6 +309,8 @@ return `<div class="deckitem" onclick="go({name:'deck', deckId:'${d.id}'})">
 <input type="file" id="importFile" accept=".json,application/json" onchange="importDeckFile(this)">
 </div>`;
 }
+function autoSpeakOn(){ return !!(S.settings && S.settings.autoSpeak); }
+function toggleAutoSpeak(v){ S.settings = S.settings || {}; S.settings.autoSpeak = !!v; save(); }
 function createDeck(){
 const name = document.getElementById("newDeckName").value.trim();
 if(!name){ alert("デッキの名前を入れてください。"); return;}
@@ -338,6 +347,10 @@ ${d.sample? "": `<button class="iconbtn red" onclick="deleteSheet('${d.id}','${s
 ${d.sample? "": `
 <h3>シートを追加する</h3>
 <p class="small">文章を貼り、隠したい語句を【　】で囲んでください。囲んだ部分が赤シートで隠れます。</p>
+<h3>PDFから文章を取り込む</h3>
+<p class="small">文字データのあるPDFを選ぶと、文章が下の「本文」欄に入ります。取り込みのあと、隠したい語句を囲んでから「シートを追加する」を押してください。画像だけのPDF（スキャンしたもの）からは文字を取り出せません。取り込みのときだけ通信します。</p>
+<input type="file" id="pdfFile" accept=".pdf,application/pdf" onchange="importPdf(this)">
+<div id="pdfMsg"></div>
 <label>タイトル</label>
 <input type="text" id="sheetTitle" placeholder="例：第3課 本文">
 <label>本文</label>
@@ -348,18 +361,20 @@ ${d.sample? "": `
 <h2>🃏 カード</h2>
 ${d.cards.length? d.cards.map(c => `
 <div class="rowitem">
-<div class="grow"><b>${esc(c.q)}</b> → ${esc(c.a)}<div class="small"><span class="badge prog">${nextLabel(c.id)}</span></div></div>
+<div class="grow"><b>${esc(c.q)}</b>${c.yomi ? `（${esc(c.yomi)}）` : ""} → ${esc(c.a)}<div class="small"><span class="badge prog">${nextLabel(c.id)}</span></div></div>
 ${d.sample? "": `<button class="iconbtn red" onclick="deleteCard('${d.id}','${c.id}')">削除</button>`}
 </div>`).join(""): `<p class="small">まだカードがありません。</p>`}
 ${d.sample? "": `
 <h3>カードを追加する</h3>
 <label>表（問題・用語）</label>
 <input type="text" id="cardQ" placeholder="例：蒸散">
+<label>よみ（任意・表の読み方。読み上げで優先されます）</label>
+<input type="text" id="cardY" placeholder="例：じょうさん">
 <label>裏（答え）</label>
 <input type="text" id="cardA" placeholder="例：葉から水が水蒸気として出ていくこと">
 <button class="btn sub" onclick="addCard('${d.id}')">カードを追加する</button>
 <h3>CSV / TSV でまとめて追加</h3>
-<p class="small">1行に「用語,答え」の2列で貼ってください。タブ区切り（TSV）でも読み込めます。ファイルからも読み込めます。</p>
+<p class="small">1行に「用語,答え」の2列で貼ってください。3列目に「よみ」も付けられます。タブ区切り（TSV）でも読み込めます。ファイルからも読み込めます。</p>
 <textarea id="csvText" style="min-height:90px;" placeholder="蒸散,葉から水が出ていくこと&#10;光合成,光でデンプンを作るはたらき"></textarea>
 <div class="btnrow">
 <button class="btn ghost" onclick="importCsvText('${d.id}')">貼った内容を読み込む</button>
@@ -391,9 +406,11 @@ d.sheets = d.sheets.filter(s => s.id!== sheetId); save(); renderDeck();
 function addCard(deckId){
 const d = getDeck(deckId); if(!d || d.sample) return;
 const q = document.getElementById("cardQ").value.trim();
+const y = document.getElementById("cardY").value.trim();
 const a = document.getElementById("cardA").value.trim();
 if(!q ||!a){ alert("表と裏の両方を入れてください。"); return;}
-d.cards.push({ id: uid(), q, a}); save(); renderDeck();
+const card = { id: uid(), q, a}; if(y) card.yomi = y;
+d.cards.push(card); save(); renderDeck();
 }
 function deleteCard(deckId, cardId){
 const d = getDeck(deckId); if(!d || d.sample) return;
@@ -412,7 +429,7 @@ function copyDeck(deckId){
 const src = getDeck(deckId); if(!src) return;
 const d = { id: uid(), name: src.name + "（コピー）",
 sheets: src.sheets.map(s => ({ id: uid(), title: s.title, body: s.body})),
-cards: src.cards.map(c => ({ id: uid(), q: c.q, a: c.a}))};
+cards: src.cards.map(c => { const n = { id: uid(), q: c.q, a: c.a}; if(c.yomi) n.yomi = c.yomi; return n; })};
 S.decks.push(d); save();
 go({ name: "deck", deckId: d.id});
 }
@@ -422,17 +439,17 @@ String(text).split(/\r?\n/).forEach(line => {
 const t = line.trim(); if(!t) return;
 let parts;
 if(t.includes("\t")) parts = t.split("\t");
-else { const i = t.indexOf(","); parts = i >= 0? [t.slice(0, i), t.slice(i + 1)]: [t];}
+else { const i = t.indexOf(","); if(i < 0) parts = [t]; else { const rest = t.slice(i + 1); const j = rest.indexOf(","); parts = j >= 0? [t.slice(0, i), rest.slice(0, j), rest.slice(j + 1)]: [t.slice(0, i), rest];}}
 const clean = v => String(v == null? "": v).trim().replace(/^"|"$/g, "");
-const q = clean(parts[0]), a = clean(parts[1]);
-if(q && a) out.push({ q, a}); else skipped++;
+const q = clean(parts[0]), a = clean(parts[1]), yomi = clean(parts[2]);
+if(q && a){ const row = { q, a}; if(yomi) row.yomi = yomi; out.push(row);} else skipped++;
 });
 return { rows: out, skipped};
 }
 function importCsvText(deckId){
 const d = getDeck(deckId); if(!d || d.sample) return;
 const { rows, skipped} = parseCsv(document.getElementById("csvText").value);
-rows.forEach(r => d.cards.push({ id: uid(), q: r.q, a: r.a}));
+rows.forEach(r => { const card = { id: uid(), q: r.q, a: r.a}; if(r.yomi) card.yomi = r.yomi; d.cards.push(card); });
 save();
 document.getElementById("csvMsg").innerHTML = `<div class="msg">${rows.length}枚のカードを追加しました。${skipped? skipped + "行は2列になっていなかったため除きました。": ""}</div>`;
 setTimeout(() => renderDeck(), 1200);
@@ -443,7 +460,7 @@ const d = getDeck(deckId); if(!d || d.sample) return;
 const r = new FileReader();
 r.onload = () => {
 const { rows, skipped} = parseCsv(String(r.result || ""));
-rows.forEach(x => d.cards.push({ id: uid(), q: x.q, a: x.a}));
+rows.forEach(x => { const card = { id: uid(), q: x.q, a: x.a}; if(x.yomi) card.yomi = x.yomi; d.cards.push(card); });
 save(); renderDeck();
 alert(rows.length + "枚のカードを追加しました。" + (skipped? skipped + "行は除きました。": ""));
 };
@@ -453,7 +470,7 @@ function exportDeck(deckId){
 const d = getDeck(deckId); if(!d) return;
 const data = { app: "aka-sheet-anki", version: 1, name: d.name,
 sheets: d.sheets.map(s => ({ title: s.title, body: s.body})),
-cards: d.cards.map(c => ({ q: c.q, a: c.a}))};
+cards: d.cards.map(c => { const o = { q: c.q, a: c.a}; if(c.yomi) o.yomi = c.yomi; return o; })};
 const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json"});
 const file = new File([blob], "aka-deck.json", { type: "application/json"});
 if(navigator.canShare && navigator.canShare({ files: [file]})){
@@ -474,13 +491,78 @@ const data = JSON.parse(String(r.result || ""));
 if(!data ||!Array.isArray(data.cards)) throw new Error("shape");
 const d = { id: uid(), name: String(data.name || "読み込んだデッキ"),
 sheets: (Array.isArray(data.sheets)? data.sheets: []).filter(s => s && s.body).map(s => ({ id: uid(), title: String(s.title || "シート"), body: String(s.body)})),
-cards: data.cards.filter(c => c && c.q && c.a).map(c => ({ id: uid(), q: String(c.q), a: String(c.a)}))};
+cards: data.cards.filter(c => c && c.q && c.a).map(c => { const o = { id: uid(), q: String(c.q), a: String(c.a)}; if(c.yomi) o.yomi = String(c.yomi); return o; })};
 S.decks.push(d); save();
 go({ name: "deck", deckId: d.id});
 }catch(e){ alert("読み込めませんでした。赤シート暗記のJSONファイルか確認してください。");}
 };
 r.readAsText(f);
 }
+/* ============ PDF取り込み（pdf.js・取り込み時のみ通信） ============ */
+let pdfJsPromise = null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(pdfJsPromise) return pdfJsPromise;
+  pdfJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = () => {
+      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; resolve(window.pdfjsLib); }
+      catch(e){ reject(e); }
+    };
+    s.onerror = () => { pdfJsPromise = null; reject(new Error("load")); };
+    document.head.appendChild(s);
+  });
+  return pdfJsPromise;
+}
+function joinParts(parts){
+  let out = "";
+  parts.forEach(s => {
+    if(!out){ out = s; return; }
+    const prev = out[out.length - 1], nxt = s[0];
+    const ascii = c => !!c && c.charCodeAt(0) < 128;
+    out += (ascii(prev) && ascii(nxt) && prev !== " " && nxt !== " ") ? " " + s : s;
+  });
+  return out;
+}
+function pageText(tc){
+  const lines = []; let cur = null; let curY = null;
+  tc.items.forEach(it => {
+    const y = Math.round(it.transform[5]);
+    if(curY === null || Math.abs(y - curY) > 2){ cur = []; lines.push(cur); curY = y; }
+    cur.push(it.str);
+  });
+  return lines.map(joinParts).join("\n");
+}
+async function importPdf(input){
+  const f = input.files && input.files[0]; if(!f) return;
+  const msg = document.getElementById("pdfMsg");
+  msg.innerHTML = `<div class="msg">PDFを読み取っています…</div>`;
+  try{
+    const lib = await loadPdfJs();
+    const buf = await f.arrayBuffer();
+    const pdf = await lib.getDocument({ data: buf }).promise;
+    let text = "";
+    for(let p = 1; p <= pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      text += pageText(tc) + "\n";
+    }
+    text = text.trim();
+    if(!text){
+      msg.innerHTML = `<div class="msg">文字を取り出せませんでした。画像だけのPDF（スキャン）の可能性があります。</div>`;
+      return;
+    }
+    document.getElementById("sheetBody").value = text;
+    const titleEl = document.getElementById("sheetTitle");
+    if(!titleEl.value) titleEl.value = f.name.replace(/\.pdf$/i, "");
+    msg.innerHTML = `<div class="msg">文章を本文欄に入れました（${pdf.numPages}ページ）。隠したい語句を囲んでから「シートを追加する」を押してください。</div>`;
+  }catch(e){
+    msg.innerHTML = `<div class="msg">読み込めませんでした。通信環境とPDFファイルを確認してください。</div>`;
+  }
+  input.value = "";
+}
+
 /* ============ シート画面 ============ */
 let sheetState = { open: {} };
 function openSheet(deckId, sheetId){
@@ -502,21 +584,27 @@ function renderSheet(){
       <button class="btn sub" onclick="sheetAll(true)">全部めくる</button>
       <button class="btn sub" onclick="sheetAll(false)">全部隠す</button>
     </div>
+    <button class="btn ghost stopSpeakBtn hidden" onclick="stopSpeak()">⏹ 読み上げを止める</button>
     <p class="small" id="sheetCount">めくった数：${opened} / ${total}</p>
     <div class="sheetbody">${renderSheetBody(sh.body)}</div>
   </div>`;
 }
+let sheetWords = [];
 function renderSheetBody(body){
+  sheetWords = [];
   let i = 0;
   return esc(body).replace(/【([^】]+)】/g, (m, w) => {
+    sheetWords.push(w);
     const idx = i++;
     const on = !!sheetState.open[idx];
     return `<span class="mask${on ? " open" : ""}" data-mi="${idx}" onclick="toggleMask(${idx})">${w}</span>`;
   });
 }
 function toggleMask(i){
-  sheetState.open[i] = !sheetState.open[i];
+  const opening = !sheetState.open[i];
+  sheetState.open[i] = opening;
   renderSheet();
+  if(opening && autoSpeakOn() && sheetWords[i]) speak(sheetWords[i]);
 }
 function sheetAll(on){
   const d = getDeck(view.deckId);
@@ -531,7 +619,9 @@ function sheetAll(on){
 /* ============ カード学習 ============ */
 let session = null;
 let currentAnswer = "";
+let currentQuestion = "";
 function speakCurrent(){ if(currentAnswer) speak(currentAnswer); }
+function speakQuestion(){ if(currentQuestion) speak(currentQuestion); }
 function startDeckStudy(deckId){
   const d = getDeck(deckId); if(!d) return;
   const list = [];
@@ -567,6 +657,7 @@ function renderStudy(){
   const item = session.list[session.idx];
   const c = item.card;
   currentAnswer = c.a;
+  currentQuestion = c.yomi || c.q;
   const nx = gradeNextDays(c.id);
   app.innerHTML = `
   <button class="backbtn" onclick="endStudy()">← やめる（${esc(session.title)}）</button>
@@ -585,7 +676,13 @@ function renderStudy(){
     <button class="g-bad" onclick="doGrade('bad')">まだ<small>次は${nx.bad}</small></button>
     <button class="g-mid" onclick="doGrade('mid')">あと少し<small>次は${nx.mid}</small></button>
     <button class="g-ok" onclick="doGrade('ok')">覚えた<small>次は${nx.ok}</small></button>
-  </div>` : ``}`;
+  </div>` : `
+  <div class="btnrow">
+    <button class="btn ghost" onclick="speakQuestion()">🔊 問題を読み上げ</button>
+    <button class="btn ghost stopSpeakBtn hidden" onclick="stopSpeak()">⏹ 停止</button>
+  </div>`}
+  `;
+  if(autoSpeakOn()) speak(session.flipped ? c.a : (c.yomi || c.q));
 }
 function stopSpeakVisualOnly(){ /* 画面描画のたびに読み上げ状態の表示だけ整える（音声自体は遷移時に停止） */ syncSpeakBtns(speaking); }
 function flipCard(){
