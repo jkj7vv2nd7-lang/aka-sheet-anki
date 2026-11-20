@@ -98,7 +98,7 @@ footer button{background:none; border:1px solid var(--line); border-radius:9px; 
 
 <script>
 "use strict";
-const APP_VER = "1.2.0";
+const APP_VER = "1.2.1";
 const LSKEY = "aka-sheet-anki-v1";
 document.getElementById("verLabel").textContent = "ver " + APP_VER;
 
@@ -620,7 +620,7 @@ const AI_NOTES = {
   openai: "OpenAIのAPIキーを貼ってください。画像を見られるモデルを選んでください。",
   claude: "AnthropicのAPIキーを貼ってください。画像を見られるモデルを選んでください。",
   compat: "OpenAI互換サービスのベースURLとキー、モデル名を入れてください。",
-  ollama: "自分のパソコンでOllamaが動いているとき向けです（キー不要）。PCのブラウザではそのまま使えます。iPhoneから使う場合は、PCが起動していることと、Ollama側のネットワーク許可設定（OLLAMA_HOSTとOLLAMA_ORIGINS）が必要です。ベースURLにはPCのアドレス（例：http://192.168.1.10:11434）を入れ、画像対応モデル（Qwen-VLやLLaVA系）を選んでください。"
+  ollama: "自分のパソコンでOllamaが動いているとき向けです（キー不要）。このアプリはインターネット上のページから動くため、PC・iPhoneどちらでも、Ollama側の接続許可が必要です。パソコンで環境変数 OLLAMA_ORIGINS=* を設定してOllamaを再起動してください。iPhoneから使う場合は OLLAMA_HOST=0.0.0.0:11434 も追加し、ベースURLをPCのアドレス（例：http://192.168.1.10:11434）に変えます。画像対応モデル（Qwen-VLやLLaVA系）を選んでください。詳しい手順は「Ollama接続手順書」にあります。"
 };
 function aiLoad(){
   let s = null;
@@ -722,6 +722,15 @@ function aiMsg(html){
   const el = document.getElementById("aiMsg");
   if(el) el.innerHTML = html ? `<div class="msg">${html}</div>` : "";
 }
+function aiErrText(e){
+  const m = String((e && e.message) || e || "");
+  if(m.includes("Failed to fetch") || m.includes("NetworkError") || m.includes("Load failed")){
+    if(aiSet.provider === "ollama")
+      return "通信できませんでした。Ollamaが起動していないか、接続許可（環境変数 OLLAMA_ORIGINS=*）の設定が不足している可能性があります。Ollamaを起動し、設定後に再起動してから、もう一度お試しください。";
+    return "通信できませんでした。ネット接続と、キー・接続先の設定を確認して、もう一度お試しください。";
+  }
+  return "読み取れませんでした：" + m;
+}
 function showAiDraft(text){
   const area = document.getElementById("aiDraftArea");
   if(area) area.classList.remove("hidden");
@@ -748,7 +757,7 @@ async function importAiPhoto(input){
     const text = await aiReadImage(blob, aiDraftMode === "sheet" ? AI_SHEET_PROMPT : AI_CARD_PROMPT);
     showAiDraft(text.trim());
     aiMsg("下書きができました。内容を確認・修正してから「この内容で追加する」を押してください。このままでは保存されません。");
-  }catch(e){ aiMsg("読み取れませんでした：" + (e.message || e)); }
+  }catch(e){ aiMsg(aiErrText(e)); }
 }
 async function importAiPdf(input){
   const f = input.files && input.files[0]; input.value = ""; if(!f) return;
@@ -783,7 +792,7 @@ async function importAiPdf(input){
     }
     showAiDraft(draft);
     aiMsg("下書きができました。内容を確認・修正してから「この内容で追加する」を押してください。このままでは保存されません。");
-  }catch(e){ aiMsg("読み取れませんでした：" + (e.message || e)); }
+  }catch(e){ aiMsg(aiErrText(e)); }
 }
 function saveAiDraft(deckId){
   const d = getDeck(deckId); if(!d || d.sample) return;
